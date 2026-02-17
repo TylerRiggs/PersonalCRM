@@ -1,35 +1,24 @@
 /**
- * OpenClaw Gateway API client
+ * OpenClaw API client
  *
- * Uses the OpenAI-compatible /v1/chat/completions endpoint.
- * In dev, Vite proxies /v1/* to the Gateway (default http://127.0.0.1:18789)
- * so the browser never makes a cross-origin request.
+ * Routes AI requests through a Vite dev server middleware at /api/chat.
+ * The middleware shells out to `openclaw agent --message "..."` via CLI,
+ * which uses the Gateway's WebSocket RPC — bypassing the known HTTP 405
+ * bug (openclaw/openclaw#4417).
  *
- * Prerequisites – run once in a terminal:
- *   openclaw config set gateway.http.endpoints.chatCompletions.enabled true
+ * The response is wrapped in OpenAI chat completion format so parsing is
+ * consistent regardless of backend.
  */
 
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 120_000; // CLI can be slow on first call
 
 interface OpenClawConfig {
-  /** Base URL for direct calls (empty = use Vite proxy via relative URLs) */
-  apiUrl: string;
-  /** Bearer token for gateway auth */
-  token: string;
-  /** Agent ID routed via x-openclaw-agent-id header */
+  /** Agent ID passed to `openclaw agent --agent <id>` */
   agentId: string;
-  /**
-   * Stable user string so the Gateway derives a persistent session key
-   * for multi-turn conversations.
-   */
-  user: string;
 }
 
 let config: OpenClawConfig = {
-  apiUrl: '', // empty = relative (goes through Vite proxy)
-  token: '',
   agentId: 'main',
-  user: 'sales-workload-manager',
 };
 
 export function configureOpenClaw(partial: Partial<OpenClawConfig>) {
@@ -44,7 +33,7 @@ export function getOpenClawConfig(): OpenClawConfig {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Pull the assistant text out of an OpenAI-style chat completion response. */
+/** Pull the assistant text out of the chat completion response. */
 function extractAssistantContent(result: unknown): string {
   if (typeof result === 'string') return result;
   if (result == null) return '';
@@ -61,41 +50,19 @@ function extractAssistantContent(result: unknown): string {
     if (typeof choice.text === 'string') return choice.text;
   }
 
-  // Fallback: common shapes from other providers
+  // Fallback shapes
   if (typeof obj.message === 'string' && obj.message.length > 0) return obj.message;
   if (typeof obj.response === 'string' && obj.response.length > 0) return obj.response;
   if (typeof obj.text === 'string' && obj.text.length > 0) return obj.text;
   if (typeof obj.content === 'string' && obj.content.length > 0) return obj.content;
   if (typeof obj.result === 'string' && obj.result.length > 0) return obj.result;
 
-  // Nested data.*
-  if (obj.data && typeof obj.data === 'object') {
-    const data = obj.data as Record<string, unknown>;
-    if (typeof data.message === 'string') return data.message;
-    if (typeof data.response === 'string') return data.response;
-    if (typeof data.text === 'string') return data.text;
-  }
+  // Error from our middleware
+  if (typeof obj.error === 'string') throw new Error(obj.error);
 
   const stringified = JSON.stringify(result, null, 2);
   if (stringified.length < 500) return stringified;
   return 'Received response but could not parse text content. Check Settings for API configuration.';
-}
-
-function baseUrl(): string {
-  return config.apiUrl || ''; // relative when empty
-}
-
-function authHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (config.token) {
-    headers['Authorization'] = `Bearer ${config.token}`;
-  }
-  if (config.agentId) {
-    headers['x-openclaw-agent-id'] = config.agentId;
-  }
-  return headers;
 }
 
 async function fetchWithTimeout(
@@ -117,8 +84,8 @@ async function fetchWithTimeout(
     }
     if (err instanceof TypeError && err.message.includes('fetch')) {
       throw new Error(
-        `Cannot connect to OpenClaw at ${baseUrl() || 'localhost (via proxy)'}. ` +
-          'Make sure OpenClaw is running and the API URL is correct in Settings.',
+        'Cannot connect to the Vite dev server API middleware. ' +
+          'Make sure the dev server is running (npm run dev).',
       );
     }
     throw err;
@@ -128,7 +95,7 @@ async function fetchWithTimeout(
 }
 
 // ---------------------------------------------------------------------------
-// Chat Completions  (POST /v1/chat/completions)
+// Core: POST /api/chat
 // ---------------------------------------------------------------------------
 
 interface ChatMessage {
@@ -137,34 +104,23 @@ interface ChatMessage {
 }
 
 /**
- * Send a chat completion request to the OpenClaw gateway.
- * Returns the raw JSON response.
+ * Send a chat request through the Vite middleware → openclaw CLI.
  */
 async function chatCompletion(messages: ChatMessage[]) {
-  const url = `${baseUrl()}/v1/chat/completions`;
-
-  const res = await fetchWithTimeout(url, {
+  const res = await fetchWithTimeout('/api/chat', {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: `openclaw:${config.agentId}`,
       messages,
-      user: config.user,
+      agentId: config.agentId,
     }),
   });
 
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    if (res.status === 404) {
-      throw new Error(
-        'OpenClaw returned 404 for /v1/chat/completions. ' +
-          'Enable the endpoint: openclaw config set gateway.http.endpoints.chatCompletions.enabled true',
-      );
-    }
-    throw new Error(
-      `OpenClaw API error (${res.status}): ${body || res.statusText}. ` +
-        'Verify your API URL and token in Settings.',
-    );
+    const body = await res.json().catch(() => ({ error: res.statusText })) as Record<string, unknown>;
+    const errorMsg = typeof body.error === 'string' ? body.error : `HTTP ${res.status}`;
+    const stderr = typeof body.stderr === 'string' ? `\n${body.stderr}` : '';
+    throw new Error(`OpenClaw error: ${errorMsg}${stderr}`);
   }
 
   return res.json();
@@ -197,47 +153,15 @@ export async function sendMessageWithSystem(
 }
 
 /**
- * List sessions via the /tools/invoke endpoint.
+ * Check if the OpenClaw CLI is available and the gateway is reachable.
  */
-export async function listSessions() {
-  const url = `${baseUrl()}/tools/invoke`;
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({
-      tool: 'sessions_list',
-      action: 'json',
-      args: {},
-      sessionKey: 'main',
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Failed to list sessions (${res.status}): ${body || res.statusText}`);
+export async function checkHealth(): Promise<{ ok: boolean; version?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/health');
+    return await res.json();
+  } catch {
+    return { ok: false, error: 'Cannot reach the dev server health endpoint' };
   }
-  return res.json();
-}
-
-/**
- * Get session history via the /tools/invoke endpoint.
- */
-export async function getSessionHistory(key: string) {
-  const url = `${baseUrl()}/tools/invoke`;
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({
-      tool: 'sessions_history',
-      action: 'json',
-      args: { sessionKey: key },
-      sessionKey: key,
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Failed to get session history (${res.status}): ${body || res.statusText}`);
-  }
-  return res.json();
 }
 
 // ---------------------------------------------------------------------------

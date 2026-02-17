@@ -10,13 +10,11 @@ import {
   Checkbox,
 } from '@adobe/react-spectrum';
 import { useState, useEffect } from 'react';
-import { configureOpenClaw, getOpenClawConfig } from '../api/openclaw';
+import { configureOpenClaw, getOpenClawConfig, checkHealth } from '../api/openclaw';
 import { db } from '../db';
 
 export default function SettingsPage() {
   const config = getOpenClawConfig();
-  const [apiUrl, setApiUrl] = useState(config.apiUrl);
-  const [token, setToken] = useState(config.token);
   const [agentId, setAgentId] = useState(config.agentId);
   const [saved, setSaved] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
@@ -28,13 +26,9 @@ export default function SettingsPage() {
 
   const handleSave = () => {
     configureOpenClaw({
-      apiUrl: apiUrl.trim(),
-      token: token.trim(),
       agentId: agentId.trim() || 'main',
     });
     localStorage.setItem('openclaw_config', JSON.stringify({
-      apiUrl: apiUrl.trim(),
-      token: token.trim(),
       agentId: agentId.trim() || 'main',
     }));
     localStorage.setItem('postcall_settings', JSON.stringify({
@@ -47,50 +41,14 @@ export default function SettingsPage() {
 
   const handleTestConnection = async () => {
     setConnectionStatus('unknown');
-    setConnectionDetail('');
-    try {
-      // Use the /v1/chat/completions endpoint with a minimal request.
-      // If apiUrl is blank, use relative URL (Vite proxy).
-      const base = apiUrl.trim() || '';
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token.trim()) {
-        headers['Authorization'] = `Bearer ${token.trim()}`;
-      }
-
-      const res = await fetch(`${base}/v1/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: `openclaw:${agentId.trim() || 'main'}`,
-          messages: [{ role: 'user', content: 'ping' }],
-        }),
-      });
-
-      if (res.ok) {
-        setConnectionStatus('connected');
-        setConnectionDetail('Chat completions endpoint is working');
-      } else if (res.status === 404) {
-        setConnectionStatus('error');
-        setConnectionDetail(
-          'Endpoint not found. Run: openclaw config set gateway.http.endpoints.chatCompletions.enabled true'
-        );
-      } else if (res.status === 401 || res.status === 403) {
-        setConnectionStatus('error');
-        setConnectionDetail(
-          `Auth failed (${res.status}). Check your Bearer token.`
-        );
-      } else {
-        const body = await res.text().catch(() => '');
-        setConnectionStatus('error');
-        setConnectionDetail(`HTTP ${res.status}: ${body || res.statusText}`);
-      }
-    } catch {
+    setConnectionDetail('Testing...');
+    const result = await checkHealth();
+    if (result.ok) {
+      setConnectionStatus('connected');
+      setConnectionDetail(`OpenClaw ${result.version} is available`);
+    } else {
       setConnectionStatus('error');
-      setConnectionDetail(
-        'Cannot reach OpenClaw. Make sure it is running and the URL is correct.'
-      );
+      setConnectionDetail(result.error || 'OpenClaw CLI not found');
     }
   };
 
@@ -100,8 +58,6 @@ export default function SettingsPage() {
     if (savedConfig) {
       try {
         const parsed = JSON.parse(savedConfig);
-        if (parsed.apiUrl != null) setApiUrl(parsed.apiUrl);
-        if (parsed.token != null) setToken(parsed.token);
         if (parsed.agentId != null) setAgentId(parsed.agentId);
         // Migrate legacy sessionKey → agentId
         if (parsed.sessionKey && !parsed.agentId) setAgentId(parsed.sessionKey);
@@ -142,25 +98,10 @@ export default function SettingsPage() {
       >
         <Heading level={3} marginBottom="size-200">OpenClaw Connection</Heading>
         <Text marginBottom="size-200" UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-600)' }}>
-          Uses the OpenAI-compatible /v1/chat/completions endpoint on the OpenClaw Gateway.
-          Leave API URL blank to use the Vite dev proxy (recommended for local development).
+          AI features use the OpenClaw CLI ({'\u2018'}openclaw agent --message ...{'\u2019'}) via the Vite dev server.
+          No API URL or token needed — the CLI handles authentication with the Gateway automatically.
         </Text>
         <Flex direction="column" gap="size-200">
-          <TextField
-            label="API URL (optional)"
-            value={apiUrl}
-            onChange={setApiUrl}
-            width="100%"
-            description="Leave blank to use Vite proxy. Direct: http://127.0.0.1:18789"
-          />
-          <TextField
-            label="Bearer Token"
-            value={token}
-            onChange={setToken}
-            width="100%"
-            type="password"
-            description="Run: openclaw config get gateway.auth.token"
-          />
           <TextField
             label="Agent ID"
             value={agentId}
@@ -179,14 +120,16 @@ export default function SettingsPage() {
               <StatusLight variant="positive">Connected</StatusLight>
             )}
             {connectionStatus === 'error' && (
-              <StatusLight variant="negative">Connection Failed</StatusLight>
+              <StatusLight variant="negative">Not Available</StatusLight>
             )}
           </Flex>
           {connectionDetail && (
             <Text UNSAFE_style={{
               color: connectionStatus === 'error'
                 ? 'var(--spectrum-global-color-red-600)'
-                : 'var(--spectrum-global-color-green-600)',
+                : connectionStatus === 'connected'
+                  ? 'var(--spectrum-global-color-green-600)'
+                  : 'var(--spectrum-global-color-gray-600)',
               fontSize: '0.85em',
             }}>
               {connectionDetail}
@@ -206,17 +149,21 @@ export default function SettingsPage() {
       >
         <Heading level={3} marginBottom="size-200">Setup Checklist</Heading>
         <Flex direction="column" gap="size-100">
-          <Text>1. Make sure OpenClaw is running (default port 18789)</Text>
+          <Text>1. Install OpenClaw globally:</Text>
           <Text UNSAFE_style={{ fontFamily: 'monospace', paddingLeft: '16px', fontSize: '0.85em' }}>
-            openclaw
+            npm install -g openclaw@latest
           </Text>
-          <Text>2. Enable the HTTP chat completions endpoint:</Text>
+          <Text>2. Run the onboarding wizard:</Text>
           <Text UNSAFE_style={{ fontFamily: 'monospace', paddingLeft: '16px', fontSize: '0.85em' }}>
-            openclaw config set gateway.http.endpoints.chatCompletions.enabled true
+            openclaw setup
           </Text>
-          <Text>3. Get your auth token (if auth is enabled):</Text>
+          <Text>3. Start the Gateway (runs in background):</Text>
           <Text UNSAFE_style={{ fontFamily: 'monospace', paddingLeft: '16px', fontSize: '0.85em' }}>
-            openclaw config get gateway.auth.token
+            openclaw gateway start
+          </Text>
+          <Text>4. Verify it works:</Text>
+          <Text UNSAFE_style={{ fontFamily: 'monospace', paddingLeft: '16px', fontSize: '0.85em' }}>
+            openclaw agent --message &quot;Hello&quot;
           </Text>
         </Flex>
       </View>

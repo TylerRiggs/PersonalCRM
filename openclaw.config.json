@@ -1,0 +1,10 @@
+{
+  "apiUrl": "http://localhost:18789",
+  "tokenPath": "~/.openclaw/gateway.json",
+  "defaultSession": "main",
+  "exportFormats": {
+    "adobe": {
+      "template": "OPPORTUNITY: {dealName} - {accountName}\nLast Action: {lastAction}\nChallenges: {challenges}\nNext Action: {nextAction}\nRisk: {risk}\n\n---\n"
+    }
+  }
+}

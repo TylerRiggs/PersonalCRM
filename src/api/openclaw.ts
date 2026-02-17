@@ -164,6 +164,18 @@ export async function checkHealth(): Promise<{ ok: boolean; version?: string; er
   }
 }
 
+/**
+ * List configured OpenClaw agents.
+ */
+export async function listAgents(): Promise<{ ok: boolean; output?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/agents');
+    return await res.json();
+  } catch {
+    return { ok: false, error: 'Cannot reach the dev server agents endpoint' };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Higher-level helpers
 // ---------------------------------------------------------------------------

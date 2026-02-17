@@ -3,9 +3,11 @@ import react from '@vitejs/plugin-react'
 import { execFile } from 'node:child_process'
 
 /**
- * Vite plugin that adds a /api/chat middleware.
- * POST /api/chat  →  runs `npx openclaw agent --message "..." --json`
- * POST /api/health →  runs `npx openclaw --version`
+ * Vite plugin that adds /api/* middleware endpoints.
+ *
+ * POST /api/chat   →  runs `npx openclaw agent --agent <id> --message "..."`
+ * GET  /api/health →  runs `npx openclaw --version`
+ * GET  /api/agents →  runs `npx openclaw agents list`
  *
  * This bypasses the known OpenClaw HTTP 405 bug (issue #4417)
  * by using the CLI, which communicates via the Gateway WebSocket RPC.
@@ -42,18 +44,32 @@ function openclawPlugin(): Plugin {
               return
             }
 
-            const args = ['openclaw', 'agent', '--message', prompt]
-            if (agentId && agentId !== 'main') {
-              args.push('--agent', agentId)
-            }
+            // Always pass --agent so the CLI knows which session to target.
+            // Default to "main" if none specified (standard OpenClaw default agent name).
+            const agent = (agentId && agentId.trim()) || 'main'
+            const args = ['openclaw', 'agent', '--agent', agent, '--message', prompt]
+
+            console.log(`[openclaw-plugin] Running: npx ${args.join(' ').substring(0, 120)}...`)
 
             execFile('npx', args, { timeout: 120_000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
               if (err) {
                 console.error('[openclaw-plugin] CLI error:', err.message)
                 console.error('[openclaw-plugin] stderr:', stderr)
+
+                // Provide actionable error messages
+                let hint = ''
+                if (stderr?.includes('choose a session') || stderr?.includes('--agent')) {
+                  hint = '\n\nHint: Run "openclaw agents list" to see available agents, ' +
+                    'then set the correct Agent ID in Settings.'
+                } else if (stderr?.includes('not found') || stderr?.includes('ENOENT')) {
+                  hint = '\n\nHint: Make sure OpenClaw is installed: npm install -g openclaw@latest'
+                } else if (stderr?.includes('gateway') || stderr?.includes('Gateway')) {
+                  hint = '\n\nHint: Make sure the gateway is running: openclaw gateway start'
+                }
+
                 res.writeHead(502, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({
-                  error: `OpenClaw CLI error: ${err.message}`,
+                  error: `OpenClaw CLI error: ${err.message}${hint}`,
                   stderr: stderr?.substring(0, 500),
                 }))
                 return
@@ -73,6 +89,19 @@ function openclawPlugin(): Plugin {
             res.writeHead(400, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Invalid JSON body' }))
           }
+        })
+      })
+
+      // ---- GET /api/agents ----
+      server.middlewares.use('/api/agents', (_req, res) => {
+        execFile('npx', ['openclaw', 'agents', 'list'], { timeout: 15_000 }, (err, stdout, stderr) => {
+          if (err) {
+            res.writeHead(503, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: err.message, stderr: stderr?.substring(0, 500) }))
+            return
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, output: stdout.trim() }))
         })
       })
 

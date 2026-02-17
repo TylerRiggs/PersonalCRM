@@ -10,7 +10,7 @@ import {
   Checkbox,
 } from '@adobe/react-spectrum';
 import { useState, useEffect } from 'react';
-import { configureOpenClaw, getOpenClawConfig, checkHealth } from '../api/openclaw';
+import { configureOpenClaw, getOpenClawConfig, checkHealth, listAgents } from '../api/openclaw';
 import { db } from '../db';
 
 export default function SettingsPage() {
@@ -19,6 +19,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
   const [connectionDetail, setConnectionDetail] = useState('');
+  const [agentsOutput, setAgentsOutput] = useState('');
 
   // Post-Call Follow-Up settings
   const [autoShowPostCall, setAutoShowPostCall] = useState(false);
@@ -42,13 +43,24 @@ export default function SettingsPage() {
   const handleTestConnection = async () => {
     setConnectionStatus('unknown');
     setConnectionDetail('Testing...');
-    const result = await checkHealth();
-    if (result.ok) {
+    setAgentsOutput('');
+
+    const [healthResult, agentsResult] = await Promise.all([
+      checkHealth(),
+      listAgents(),
+    ]);
+
+    if (healthResult.ok) {
       setConnectionStatus('connected');
-      setConnectionDetail(`OpenClaw ${result.version} is available`);
+      let detail = `OpenClaw ${healthResult.version} is available`;
+      if (agentsResult.ok && agentsResult.output) {
+        detail += ` — Agents detected (see below)`;
+        setAgentsOutput(agentsResult.output);
+      }
+      setConnectionDetail(detail);
     } else {
       setConnectionStatus('error');
-      setConnectionDetail(result.error || 'OpenClaw CLI not found');
+      setConnectionDetail(healthResult.error || 'OpenClaw CLI not found');
     }
   };
 
@@ -59,8 +71,9 @@ export default function SettingsPage() {
       try {
         const parsed = JSON.parse(savedConfig);
         if (parsed.agentId != null) setAgentId(parsed.agentId);
-        // Migrate legacy sessionKey → agentId
+        // Migrate legacy values
         if (parsed.sessionKey && !parsed.agentId) setAgentId(parsed.sessionKey);
+        // agentId 'main' is the standard default
         configureOpenClaw(parsed);
       } catch {
         // ignore
@@ -98,8 +111,9 @@ export default function SettingsPage() {
       >
         <Heading level={3} marginBottom="size-200">OpenClaw Connection</Heading>
         <Text marginBottom="size-200" UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-600)' }}>
-          AI features use the OpenClaw CLI ({'\u2018'}openclaw agent --message ...{'\u2019'}) via the Vite dev server.
+          AI features use the OpenClaw CLI via the Vite dev server.
           No API URL or token needed — the CLI handles authentication with the Gateway automatically.
+          Set the Agent ID to match one of your configured agents (run {'\u2018'}openclaw agents list{'\u2019'} to see them).
         </Text>
         <Flex direction="column" gap="size-200">
           <TextField
@@ -107,7 +121,7 @@ export default function SettingsPage() {
             value={agentId}
             onChange={setAgentId}
             width="size-3000"
-            description="Default: main"
+            description={'The --agent name passed to the CLI. Use "openclaw agents list" to find yours.'}
           />
           <Flex gap="size-100" alignItems="center" wrap>
             <Button variant="accent" onPress={handleSave}>
@@ -135,6 +149,19 @@ export default function SettingsPage() {
               {connectionDetail}
             </Text>
           )}
+          {agentsOutput && (
+            <View
+              borderWidth="thin"
+              borderColor="dark"
+              borderRadius="small"
+              padding="size-150"
+              UNSAFE_style={{ backgroundColor: 'var(--spectrum-global-color-gray-75)', overflow: 'auto', maxHeight: '200px' }}
+            >
+              <Text UNSAFE_style={{ fontFamily: 'monospace', fontSize: '0.8em', whiteSpace: 'pre-wrap' }}>
+                {agentsOutput}
+              </Text>
+            </View>
+          )}
         </Flex>
       </View>
 
@@ -161,10 +188,15 @@ export default function SettingsPage() {
           <Text UNSAFE_style={{ fontFamily: 'monospace', paddingLeft: '16px', fontSize: '0.85em' }}>
             openclaw gateway start
           </Text>
-          <Text>4. Verify it works:</Text>
+          <Text>4. List your agents and note the name:</Text>
           <Text UNSAFE_style={{ fontFamily: 'monospace', paddingLeft: '16px', fontSize: '0.85em' }}>
-            openclaw agent --message &quot;Hello&quot;
+            openclaw agents list
           </Text>
+          <Text>5. Verify it works (replace YOUR_AGENT with the name from step 4):</Text>
+          <Text UNSAFE_style={{ fontFamily: 'monospace', paddingLeft: '16px', fontSize: '0.85em' }}>
+            openclaw agent --agent YOUR_AGENT --message &quot;Hello&quot;
+          </Text>
+          <Text>6. Set the Agent ID above to match, then click Test Connection.</Text>
         </Flex>
       </View>
 

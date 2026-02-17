@@ -12,7 +12,6 @@ import {
 import { useState } from 'react';
 import { createInteraction } from '../hooks/useInteractions';
 import { updateOpportunity } from '../hooks/useOpportunities';
-import { suggestNextActions } from '../api/openclaw';
 import type { InteractionType } from '../types';
 
 const TYPES: { key: InteractionType; label: string }[] = [
@@ -20,6 +19,9 @@ const TYPES: { key: InteractionType; label: string }[] = [
   { key: 'internal_call', label: 'Internal Call' },
   { key: 'email', label: 'Email' },
   { key: 'meeting', label: 'Meeting' },
+  { key: 'demo', label: 'Demo' },
+  { key: 'discovery_call', label: 'Discovery Call' },
+  { key: 'executive_briefing', label: 'Executive Briefing' },
 ];
 
 interface Props {
@@ -35,7 +37,7 @@ export default function InteractionForm({ opportunityId, onClose }: Props) {
   const [outcomesText, setOutcomesText] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const handleSave = async (andSuggest = false) => {
+  const handleSave = async () => {
     if (!notes.trim()) return;
     setSaving(true);
     try {
@@ -78,7 +80,7 @@ export default function InteractionForm({ opportunityId, onClose }: Props) {
       marginBottom="size-200"
       backgroundColor="gray-50"
     >
-      <Heading level={4} marginBottom="size-200">Log Interaction</Heading>
+      <Heading level={4} marginBottom="size-200">Quick Log Interaction</Heading>
       <Flex direction="column" gap="size-200">
         <Flex gap="size-200" wrap>
           <Picker
@@ -120,7 +122,7 @@ export default function InteractionForm({ opportunityId, onClose }: Props) {
         />
         <Flex gap="size-100" justifyContent="end">
           <Button variant="secondary" onPress={onClose}>Cancel</Button>
-          <Button variant="accent" onPress={() => handleSave(false)} isPending={saving}>
+          <Button variant="accent" onPress={handleSave} isPending={saving}>
             <Text>Save</Text>
           </Button>
         </Flex>

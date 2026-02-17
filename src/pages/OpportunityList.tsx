@@ -29,22 +29,29 @@ function riskVariant(risk: RiskLevel): 'positive' | 'info' | 'negative' {
 
 export default function OpportunityList() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const initialSearch = searchParams.get('search') ?? '';
-  const [search, setSearch] = useState(initialSearch);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSearch = searchParams.get('search') ?? '';
   const [stageFilter, setStageFilter] = useState<Stage | ''>('');
   const [riskFilter, setRiskFilter] = useState<RiskLevel | ''>('');
 
   const filters = useMemo(
     () => ({
-      search: search || undefined,
+      search: urlSearch || undefined,
       stage: stageFilter || undefined,
       risk: riskFilter || undefined,
     }),
-    [search, stageFilter, riskFilter]
+    [urlSearch, stageFilter, riskFilter]
   );
 
   const opportunities = useOpportunities(filters as { search?: string; stage?: Stage; risk?: RiskLevel });
+
+  const handleLocalSearchChange = (value: string) => {
+    if (value.trim()) {
+      setSearchParams({ search: value.trim() }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  };
 
   return (
     <View>
@@ -60,8 +67,9 @@ export default function OpportunityList() {
       <Flex gap="size-200" wrap marginBottom="size-300" alignItems="end">
         <SearchField
           label="Search"
-          value={search}
-          onChange={setSearch}
+          value={urlSearch}
+          onChange={handleLocalSearchChange}
+          onClear={() => setSearchParams({}, { replace: true })}
           width="size-3000"
         />
         <Picker
@@ -91,7 +99,7 @@ export default function OpportunityList() {
       {/* Grid */}
       {opportunities.length === 0 ? (
         <Well>
-          <Text>No opportunities found. {search || stageFilter || riskFilter ? 'Try adjusting your filters.' : 'Create your first opportunity to get started.'}</Text>
+          <Text>No opportunities found. {urlSearch || stageFilter || riskFilter ? 'Try adjusting your filters.' : 'Create your first opportunity to get started.'}</Text>
         </Well>
       ) : (
         <Flex wrap gap="size-200">

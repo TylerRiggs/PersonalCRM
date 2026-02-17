@@ -17,24 +17,25 @@ import {
   TabPanels,
   Item,
   Checkbox,
-  TextArea,
 } from '@adobe/react-spectrum';
 import Delete from '@spectrum-icons/workflow/Delete';
 import Edit from '@spectrum-icons/workflow/Edit';
 import Add from '@spectrum-icons/workflow/Add';
 import Chat from '@spectrum-icons/workflow/Chat';
+import LockClosed from '@spectrum-icons/workflow/LockClosed';
 import { useState } from 'react';
 import { useOpportunity, deleteOpportunity } from '../hooks/useOpportunities';
-import { useInteractions, createInteraction } from '../hooks/useInteractions';
-import { useTodos, createTodo, toggleTodo, deleteTodo } from '../hooks/useTodos';
-import { useDependencies, createDependency, updateDependencyStatus, deleteDependency } from '../hooks/useDependencies';
+import { useInteractions } from '../hooks/useInteractions';
+import { useTodos, toggleTodo, deleteTodo } from '../hooks/useTodos';
+import { useDependencies, updateDependencyStatus, deleteDependency } from '../hooks/useDependencies';
 import { formatDate, formatCurrency, formatInteractionType, daysSince } from '../utils/format';
 import { suggestNextActions } from '../api/openclaw';
 import InteractionForm from '../components/InteractionForm';
+import PostCallFollowUpForm from '../components/PostCallFollowUpForm';
 import OpportunityForm from '../components/OpportunityForm';
 import TodoForm from '../components/TodoForm';
 import DependencyForm from '../components/DependencyForm';
-import type { RiskLevel, DependencyStatus, InteractionType } from '../types';
+import type { RiskLevel, DependencyStatus, Interaction } from '../types';
 
 function riskVariant(risk: RiskLevel): 'positive' | 'info' | 'negative' {
   if (risk === 'Low') return 'positive';
@@ -49,6 +50,142 @@ function depStatusLight(status: DependencyStatus) {
   return 'neutral' as const;
 }
 
+function InteractionCard({ interaction }: { interaction: Interaction }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasExtendedData = interaction.summary || interaction.transcript || interaction.personalNotes || interaction.aiAnalysis;
+
+  return (
+    <View
+      borderWidth="thin"
+      borderColor="gray-300"
+      borderRadius="medium"
+      padding="size-200"
+    >
+      <Flex justifyContent="space-between" alignItems="center" marginBottom="size-100">
+        <Flex alignItems="center" gap="size-100">
+          <Badge variant="info">{formatInteractionType(interaction.type)}</Badge>
+          <Text UNSAFE_style={{ fontWeight: 'bold' }}>{formatDate(interaction.date)}</Text>
+          {interaction.aiAnalysis && (
+            <Badge variant="positive">AI Analyzed</Badge>
+          )}
+        </Flex>
+        {hasExtendedData && (
+          <ActionButton isQuiet onPress={() => setExpanded(!expanded)}>
+            <Text UNSAFE_style={{ fontSize: '12px' }}>{expanded ? 'Collapse' : 'Expand'}</Text>
+          </ActionButton>
+        )}
+      </Flex>
+
+      {/* Summary or notes */}
+      <Text>{interaction.summary || interaction.notes}</Text>
+
+      {interaction.participants.length > 0 && (
+        <Text UNSAFE_style={{ fontSize: '12px', color: 'var(--spectrum-global-color-gray-600)', marginTop: '4px' }}>
+          Participants: {interaction.participants.join(', ')}
+        </Text>
+      )}
+
+      {interaction.outcomes.length > 0 && (
+        <View marginTop="size-100">
+          <Text UNSAFE_style={{ fontSize: '12px', fontWeight: 'bold' }}>Outcomes:</Text>
+          {interaction.outcomes.map((o, i) => (
+            <Text key={i} UNSAFE_style={{ fontSize: '12px' }}>&#8226; {o}</Text>
+          ))}
+        </View>
+      )}
+
+      {/* Expanded section */}
+      {expanded && hasExtendedData && (
+        <View marginTop="size-200">
+          <Divider size="S" marginBottom="size-150" />
+
+          {interaction.transcript && (
+            <View marginBottom="size-150">
+              <Text UNSAFE_style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px', display: 'block' }}>
+                Transcript
+              </Text>
+              <View
+                UNSAFE_style={{
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  background: 'var(--spectrum-global-color-gray-100)',
+                  padding: '8px',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                <Text UNSAFE_style={{ fontSize: '12px' }}>{interaction.transcript}</Text>
+              </View>
+            </View>
+          )}
+
+          {interaction.personalNotes && (
+            <View
+              marginBottom="size-150"
+              UNSAFE_style={{
+                background: 'var(--spectrum-global-color-yellow-100)',
+                borderRadius: '4px',
+                padding: '8px',
+              }}
+            >
+              <Flex alignItems="center" gap="size-50" marginBottom="size-50">
+                <LockClosed size="XS" />
+                <Text UNSAFE_style={{ fontWeight: 600, fontSize: '12px' }}>Personal Notes</Text>
+              </Flex>
+              <Text UNSAFE_style={{ fontSize: '12px', whiteSpace: 'pre-wrap' }}>
+                {interaction.personalNotes}
+              </Text>
+            </View>
+          )}
+
+          {interaction.aiAnalysis && (() => {
+            try {
+              const analysis = JSON.parse(interaction.aiAnalysis);
+              return (
+                <View marginBottom="size-150">
+                  <Text UNSAFE_style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px', display: 'block' }}>
+                    AI Analysis
+                  </Text>
+                  {analysis.nextActions?.length > 0 && (
+                    <View marginBottom="size-50">
+                      <Text UNSAFE_style={{ fontSize: '11px', fontWeight: 600 }}>Next Actions:</Text>
+                      {analysis.nextActions.map((a: string, i: number) => (
+                        <Text key={i} UNSAFE_style={{ fontSize: '12px' }}>{i + 1}. {a}</Text>
+                      ))}
+                    </View>
+                  )}
+                  {analysis.risks?.length > 0 && (
+                    <View>
+                      <Text UNSAFE_style={{ fontSize: '11px', fontWeight: 600, color: 'var(--spectrum-global-color-red-600)' }}>Risks:</Text>
+                      {analysis.risks.map((r: string, i: number) => (
+                        <Text key={i} UNSAFE_style={{ fontSize: '12px' }}>&#9888; {r}</Text>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              );
+            } catch {
+              return null;
+            }
+          })()}
+
+          {interaction.followUpDraft && (
+            <View>
+              <Text UNSAFE_style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px', display: 'block' }}>
+                Draft Follow-Up Email
+              </Text>
+              <Text UNSAFE_style={{ fontSize: '12px', whiteSpace: 'pre-wrap' }}>
+                {interaction.followUpDraft}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function OpportunityDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -59,6 +196,7 @@ export default function OpportunityDetail() {
 
   const [showEdit, setShowEdit] = useState(false);
   const [showInteractionForm, setShowInteractionForm] = useState(false);
+  const [showPostCallForm, setShowPostCallForm] = useState(false);
   const [showTodoForm, setShowTodoForm] = useState(false);
   const [showDepForm, setShowDepForm] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string | null>(null);
@@ -90,7 +228,7 @@ export default function OpportunityDetail() {
     setAiError(null);
     try {
       const recentInteractionStrs = interactions.slice(0, 5).map(
-        (i) => `${formatDate(i.date)} ${formatInteractionType(i.type)}: ${i.notes.substring(0, 100)}`
+        (i) => `${formatDate(i.date)} ${formatInteractionType(i.type)}: ${(i.summary || i.notes).substring(0, 100)}`
       );
       const result = await suggestNextActions({
         accountName: opportunity.accountName,
@@ -142,7 +280,7 @@ export default function OpportunityDetail() {
               cancelLabel="Cancel"
               onPrimaryAction={handleDelete}
             >
-              Are you sure you want to delete "{opportunity.dealName}"? This will also remove all
+              Are you sure you want to delete &quot;{opportunity.dealName}&quot;? This will also remove all
               associated interactions, tasks, and dependencies.
             </AlertDialog>
           </DialogTrigger>
@@ -187,7 +325,7 @@ export default function OpportunityDetail() {
             <View>
               {opportunity.challenges.length > 0 ? (
                 opportunity.challenges.map((c, i) => (
-                  <Text key={i} UNSAFE_style={{ display: 'block' }}>• {c}</Text>
+                  <Text key={i} UNSAFE_style={{ display: 'block' }}>&#8226; {c}</Text>
                 ))
               ) : (
                 <Text>None</Text>
@@ -211,11 +349,24 @@ export default function OpportunityDetail() {
             <View paddingY="size-200">
               <Flex justifyContent="space-between" alignItems="center" marginBottom="size-200">
                 <Heading level={4}>Recent Interactions</Heading>
-                <Button variant="primary" onPress={() => setShowInteractionForm(true)}>
-                  <Add />
-                  <Text>Log Interaction</Text>
-                </Button>
+                <Flex gap="size-100">
+                  <Button variant="accent" onPress={() => { setShowPostCallForm(true); setShowInteractionForm(false); }}>
+                    <Chat />
+                    <Text>Post-Call Follow-Up</Text>
+                  </Button>
+                  <Button variant="secondary" onPress={() => { setShowInteractionForm(true); setShowPostCallForm(false); }}>
+                    <Add />
+                    <Text>Quick Log</Text>
+                  </Button>
+                </Flex>
               </Flex>
+
+              {showPostCallForm && (
+                <PostCallFollowUpForm
+                  opportunity={opportunity}
+                  onClose={() => setShowPostCallForm(false)}
+                />
+              )}
 
               {showInteractionForm && (
                 <InteractionForm
@@ -229,34 +380,7 @@ export default function OpportunityDetail() {
               ) : (
                 <Flex direction="column" gap="size-150">
                   {interactions.map((interaction) => (
-                    <View
-                      key={interaction.id}
-                      borderWidth="thin"
-                      borderColor="gray-300"
-                      borderRadius="medium"
-                      padding="size-200"
-                    >
-                      <Flex justifyContent="space-between" alignItems="center" marginBottom="size-100">
-                        <Flex alignItems="center" gap="size-100">
-                          <Badge variant="info">{formatInteractionType(interaction.type)}</Badge>
-                          <Text UNSAFE_style={{ fontWeight: 'bold' }}>{formatDate(interaction.date)}</Text>
-                        </Flex>
-                      </Flex>
-                      <Text>{interaction.notes}</Text>
-                      {interaction.participants.length > 0 && (
-                        <Text UNSAFE_style={{ fontSize: '12px', color: 'var(--spectrum-global-color-gray-600)', marginTop: '4px' }}>
-                          Participants: {interaction.participants.join(', ')}
-                        </Text>
-                      )}
-                      {interaction.outcomes.length > 0 && (
-                        <View marginTop="size-100">
-                          <Text UNSAFE_style={{ fontSize: '12px', fontWeight: 'bold' }}>Outcomes:</Text>
-                          {interaction.outcomes.map((o, i) => (
-                            <Text key={i} UNSAFE_style={{ fontSize: '12px' }}>• {o}</Text>
-                          ))}
-                        </View>
-                      )}
-                    </View>
+                    <InteractionCard key={interaction.id} interaction={interaction} />
                   ))}
                 </Flex>
               )}

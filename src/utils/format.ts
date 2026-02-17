@@ -1,4 +1,4 @@
-import type { Opportunity, Interaction } from '../types';
+import type { Opportunity, InteractionType } from '../types';
 
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
@@ -20,12 +20,15 @@ export function formatCurrency(value: number): string {
   return `$${value.toLocaleString()}`;
 }
 
-export function formatInteractionType(type: Interaction['type']): string {
-  const map: Record<Interaction['type'], string> = {
+export function formatInteractionType(type: InteractionType): string {
+  const map: Record<InteractionType, string> = {
     customer_call: 'Customer Call',
     internal_call: 'Internal Call',
     email: 'Email',
     meeting: 'Meeting',
+    demo: 'Demo',
+    discovery_call: 'Discovery Call',
+    executive_briefing: 'Executive Briefing',
   };
   return map[type];
 }

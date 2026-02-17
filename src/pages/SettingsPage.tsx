@@ -5,10 +5,9 @@ import {
   TextField,
   Button,
   Text,
-  Well,
-  Divider,
   StatusLight,
   ActionButton,
+  Checkbox,
 } from '@adobe/react-spectrum';
 import { useState, useEffect } from 'react';
 import { configureOpenClaw, getOpenClawConfig } from '../api/openclaw';
@@ -22,17 +21,24 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
 
+  // Post-Call Follow-Up settings
+  const [autoShowPostCall, setAutoShowPostCall] = useState(false);
+  const [autoRunAi, setAutoRunAi] = useState(false);
+
   const handleSave = () => {
     configureOpenClaw({
       apiUrl: apiUrl.trim(),
       token: token.trim(),
       sessionKey: sessionKey.trim() || 'main',
     });
-    // Persist to localStorage
     localStorage.setItem('openclaw_config', JSON.stringify({
       apiUrl: apiUrl.trim(),
       token: token.trim(),
       sessionKey: sessionKey.trim() || 'main',
+    }));
+    localStorage.setItem('postcall_settings', JSON.stringify({
+      autoShowPostCall,
+      autoRunAi,
     }));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -56,14 +62,24 @@ export default function SettingsPage() {
 
   // Load saved config on mount
   useEffect(() => {
-    const saved = localStorage.getItem('openclaw_config');
-    if (saved) {
+    const savedConfig = localStorage.getItem('openclaw_config');
+    if (savedConfig) {
       try {
-        const parsed = JSON.parse(saved);
+        const parsed = JSON.parse(savedConfig);
         setApiUrl(parsed.apiUrl ?? apiUrl);
         setToken(parsed.token ?? token);
         setSessionKey(parsed.sessionKey ?? sessionKey);
         configureOpenClaw(parsed);
+      } catch {
+        // ignore
+      }
+    }
+    const savedPostCall = localStorage.getItem('postcall_settings');
+    if (savedPostCall) {
+      try {
+        const parsed = JSON.parse(savedPostCall);
+        setAutoShowPostCall(parsed.autoShowPostCall ?? false);
+        setAutoRunAi(parsed.autoRunAi ?? false);
       } catch {
         // ignore
       }
@@ -129,12 +145,32 @@ export default function SettingsPage() {
         </Flex>
       </View>
 
+      {/* Post-Call Follow-Up Settings */}
+      <View
+        borderWidth="thin"
+        borderColor="dark"
+        borderRadius="medium"
+        padding="size-300"
+        marginBottom="size-300"
+      >
+        <Heading level={3} marginBottom="size-200">Post-Call Follow-Up</Heading>
+        <Flex direction="column" gap="size-150">
+          <Checkbox isSelected={autoShowPostCall} onChange={setAutoShowPostCall}>
+            Always show Post-Call Follow-Up after logging interaction
+          </Checkbox>
+          <Checkbox isSelected={autoRunAi} onChange={setAutoRunAi}>
+            Auto-run AI analysis on call follow-up
+          </Checkbox>
+        </Flex>
+      </View>
+
       {/* Data Management */}
       <View
         borderWidth="thin"
         borderColor="dark"
         borderRadius="medium"
         padding="size-300"
+        marginBottom="size-300"
       >
         <Heading level={3} marginBottom="size-200">Data Management</Heading>
         <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-600)' }}>
@@ -157,17 +193,28 @@ export default function SettingsPage() {
         borderColor="dark"
         borderRadius="medium"
         padding="size-300"
-        marginTop="size-300"
       >
         <Heading level={3} marginBottom="size-200">Keyboard Shortcuts</Heading>
         <Flex direction="column" gap="size-100">
           <Flex gap="size-200">
-            <Text UNSAFE_style={{ fontFamily: 'monospace', minWidth: '120px' }}>Cmd/Ctrl + K</Text>
+            <Text UNSAFE_style={{ fontFamily: 'monospace', minWidth: '180px' }}>Cmd/Ctrl + K</Text>
             <Text>New Opportunity</Text>
           </Flex>
           <Flex gap="size-200">
-            <Text UNSAFE_style={{ fontFamily: 'monospace', minWidth: '120px' }}>/</Text>
+            <Text UNSAFE_style={{ fontFamily: 'monospace', minWidth: '180px' }}>/</Text>
             <Text>Focus Search</Text>
+          </Flex>
+          <Flex gap="size-200">
+            <Text UNSAFE_style={{ fontFamily: 'monospace', minWidth: '180px' }}>Esc</Text>
+            <Text>Clear Search / Close</Text>
+          </Flex>
+          <Flex gap="size-200">
+            <Text UNSAFE_style={{ fontFamily: 'monospace', minWidth: '180px' }}>Cmd/Ctrl + Enter</Text>
+            <Text>Save form (when in Post-Call Follow-Up)</Text>
+          </Flex>
+          <Flex gap="size-200">
+            <Text UNSAFE_style={{ fontFamily: 'monospace', minWidth: '180px' }}>Cmd/Ctrl + Shift + A</Text>
+            <Text>Trigger AI analysis (in Post-Call Follow-Up)</Text>
           </Flex>
         </Flex>
       </View>

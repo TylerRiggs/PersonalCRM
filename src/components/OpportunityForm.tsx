@@ -4,13 +4,16 @@ import {
   Heading,
   TextField,
   NumberField,
-  TextArea,
   Picker,
   Item,
   Button,
+  ActionButton,
   Text,
+  Badge,
 } from '@adobe/react-spectrum';
-import { useState } from 'react';
+import Close from '@spectrum-icons/workflow/Close';
+import Add from '@spectrum-icons/workflow/Add';
+import { useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createOpportunity, updateOpportunity } from '../hooks/useOpportunities';
 import type { Opportunity, Stage, RiskLevel } from '../types';
@@ -38,21 +41,34 @@ export default function OpportunityForm({ opportunity, onClose }: Props) {
   );
   const [lastAction, setLastAction] = useState(opportunity?.lastAction ?? '');
   const [nextAction, setNextAction] = useState(opportunity?.nextAction ?? '');
-  const [challengesText, setChallengesText] = useState(
-    opportunity?.challenges?.join('\n') ?? ''
-  );
+  const [challenges, setChallenges] = useState<string[]>(opportunity?.challenges ?? []);
+  const [newChallenge, setNewChallenge] = useState('');
   const [risk, setRisk] = useState<RiskLevel>(opportunity?.risk ?? 'Low');
   const [saving, setSaving] = useState(false);
+
+  const addChallenge = () => {
+    const trimmed = newChallenge.trim();
+    if (trimmed && !challenges.includes(trimmed)) {
+      setChallenges([...challenges, trimmed]);
+      setNewChallenge('');
+    }
+  };
+
+  const removeChallenge = (index: number) => {
+    setChallenges(challenges.filter((_, i) => i !== index));
+  };
+
+  const handleChallengeKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addChallenge();
+    }
+  };
 
   const handleSave = async () => {
     if (!accountName.trim() || !dealName.trim()) return;
     setSaving(true);
     try {
-      const challenges = challengesText
-        .split('\n')
-        .map((c) => c.trim())
-        .filter(Boolean);
-
       const data = {
         accountName: accountName.trim(),
         dealName: dealName.trim(),
@@ -155,12 +171,57 @@ export default function OpportunityForm({ opportunity, onClose }: Props) {
           onChange={setNextAction}
           width="100%"
         />
-        <TextArea
-          label="Challenges (one per line)"
-          value={challengesText}
-          onChange={setChallengesText}
-          width="100%"
-        />
+
+        {/* Chip-based challenges input */}
+        <View>
+          <Text UNSAFE_style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', display: 'block' }}>
+            Challenges
+          </Text>
+          {challenges.length > 0 && (
+            <Flex gap="size-50" wrap marginBottom="size-100">
+              {challenges.map((c, i) => (
+                <View
+                  key={i}
+                  UNSAFE_style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: 'var(--spectrum-global-color-orange-100)',
+                    border: '1px solid var(--spectrum-global-color-orange-400)',
+                    borderRadius: '16px',
+                    padding: '2px 8px 2px 12px',
+                    fontSize: '13px',
+                  }}
+                >
+                  <Text UNSAFE_style={{ fontSize: '13px' }}>{c}</Text>
+                  <ActionButton
+                    isQuiet
+                    onPress={() => removeChallenge(i)}
+                    UNSAFE_style={{ minWidth: 0, padding: '0 2px', height: '20px' }}
+                  >
+                    <Close size="XS" />
+                  </ActionButton>
+                </View>
+              ))}
+            </Flex>
+          )}
+          <Flex gap="size-100" alignItems="end">
+            <TextField
+              label=""
+              aria-label="Add challenge"
+              value={newChallenge}
+              onChange={setNewChallenge}
+              onKeyDown={handleChallengeKeyDown}
+              width="size-4600"
+              placeholder="Type a challenge and press Enter"
+            />
+            <ActionButton onPress={addChallenge} isDisabled={!newChallenge.trim()}>
+              <Add size="S" />
+              <Text>Add</Text>
+            </ActionButton>
+          </Flex>
+        </View>
+
         <Flex gap="size-100" justifyContent="end">
           {(isEdit || onClose) && (
             <Button

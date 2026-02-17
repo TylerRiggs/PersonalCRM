@@ -8,7 +8,14 @@ export type Stage =
 
 export type RiskLevel = 'Low' | 'Medium' | 'High';
 
-export type InteractionType = 'customer_call' | 'internal_call' | 'email' | 'meeting';
+export type InteractionType =
+  | 'customer_call'
+  | 'internal_call'
+  | 'email'
+  | 'meeting'
+  | 'demo'
+  | 'discovery_call'
+  | 'executive_briefing';
 
 export type Priority = 'Low' | 'Medium' | 'High';
 
@@ -20,8 +27,13 @@ export interface Interaction {
   type: InteractionType;
   date: Date;
   notes: string;
+  summary?: string;
+  transcript?: string;
+  personalNotes?: string;
   participants: string[];
   outcomes: string[];
+  aiAnalysis?: string;
+  followUpDraft?: string;
 }
 
 export interface Todo {

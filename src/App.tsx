@@ -9,6 +9,7 @@ import NewOpportunity from './pages/NewOpportunity';
 import ExportPage from './pages/ExportPage';
 import SettingsPage from './pages/SettingsPage';
 import { configureOpenClaw } from './api/openclaw';
+import { seedDatabase } from './db/seed';
 
 function App() {
   const [colorScheme, setColorScheme] = useState<'light' | 'dark'>(() => {
@@ -35,6 +36,11 @@ function App() {
         // ignore
       }
     }
+  }, []);
+
+  // Seed sample data on first load
+  useEffect(() => {
+    seedDatabase().catch(console.error);
   }, []);
 
   return (

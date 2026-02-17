@@ -16,6 +16,14 @@ class CRMDatabase extends Dexie {
       todos: 'id, opportunityId, dueDate, completed, priority',
       dependencies: 'id, opportunityId, status',
     });
+
+    // v2: Interaction gains summary, transcript, personalNotes, aiAnalysis, followUpDraft
+    this.version(2).stores({
+      opportunities: 'id, accountName, dealName, stage, risk, closeDate, updatedAt',
+      interactions: 'id, opportunityId, type, date',
+      todos: 'id, opportunityId, dueDate, completed, priority',
+      dependencies: 'id, opportunityId, status',
+    });
   }
 }
 

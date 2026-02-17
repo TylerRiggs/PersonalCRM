@@ -14,7 +14,7 @@ import ViewList from '@spectrum-icons/workflow/ViewList';
 import Export from '@spectrum-icons/workflow/Export';
 import Settings from '@spectrum-icons/workflow/Settings';
 import Add from '@spectrum-icons/workflow/Add';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: <Home /> },
@@ -28,26 +28,75 @@ export default function Layout() {
   const location = useLocation();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const handleQuickAdd = useCallback(() => {
     navigate('/opportunities/new');
   }, [navigate]);
 
+  // Live-filter: navigate to opportunities page as user types
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setGlobalSearch(value);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        if (value.trim()) {
+          navigate(`/opportunities?search=${encodeURIComponent(value.trim())}`, { replace: true });
+        } else if (location.pathname === '/opportunities') {
+          navigate('/opportunities', { replace: true });
+        }
+      }, 250);
+    },
+    [navigate, location.pathname]
+  );
+
+  const handleSearchClear = useCallback(() => {
+    setGlobalSearch('');
+    if (location.pathname === '/opportunities') {
+      navigate('/opportunities', { replace: true });
+    }
+  }, [navigate, location.pathname]);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      // Cmd/Ctrl + K → New Opportunity
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         handleQuickAdd();
       }
+      // / → Focus search (when not in input)
       if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
         e.preventDefault();
         const el = document.querySelector<HTMLInputElement>('[data-global-search] input');
         el?.focus();
       }
+      // Esc → Clear search / blur
+      if (e.key === 'Escape') {
+        const active = document.activeElement as HTMLElement;
+        if (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA') {
+          active.blur();
+        }
+        if (globalSearch) {
+          setGlobalSearch('');
+          if (location.pathname === '/opportunities') {
+            navigate('/opportunities', { replace: true });
+          }
+        }
+      }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleQuickAdd]);
+  }, [handleQuickAdd, globalSearch, location.pathname, navigate]);
+
+  // Sync search field with URL params when navigating away
+  useEffect(() => {
+    if (location.pathname !== '/opportunities') return;
+    const params = new URLSearchParams(location.search);
+    const urlSearch = params.get('search') ?? '';
+    if (urlSearch !== globalSearch) {
+      setGlobalSearch(urlSearch);
+    }
+  }, [location.pathname, location.search]);
 
   return (
     <Flex direction="row" height="100vh" UNSAFE_style={{ overflow: 'hidden' }}>
@@ -117,7 +166,8 @@ export default function Layout() {
               <SearchField
                 label="Search opportunities"
                 value={globalSearch}
-                onChange={setGlobalSearch}
+                onChange={handleSearchChange}
+                onClear={handleSearchClear}
                 onSubmit={() => {
                   if (globalSearch.trim()) {
                     navigate(`/opportunities?search=${encodeURIComponent(globalSearch.trim())}`);
@@ -128,7 +178,7 @@ export default function Layout() {
             </div>
             <Flex alignItems="center" gap="size-100">
               <Text UNSAFE_style={{ fontSize: '12px', color: 'var(--spectrum-global-color-gray-600)' }}>
-                ⌘K New &middot; / Search
+                ⌘K New &middot; / Search &middot; Esc Clear
               </Text>
             </Flex>
           </Flex>
